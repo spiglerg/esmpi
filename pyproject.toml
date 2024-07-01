@@ -1,0 +1,60 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "esmpi"
+version = "1.0"
+authors = [
+  { name="Giacomo Spigler <http://www.spigler.net/giacomo>" },
+]
+description = "Collection of Evolution Strategies optimizers with native MPI parallelization."
+readme = "README.md"
+license = { file="LICENSE" }
+requires-python = ">=3.7"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+
+keywords = ["evolution strategies", "cma-es", "mpi", "openai-es"]
+
+dependencies = [
+    "torch",
+    "mpi4py"
+]
+
+[project.optional-dependencies]
+full = [
+    "stable-baselines3",
+    "cmaes"
+]
+
+[project.urls]
+"Homepage" = "https://airlab-tilburg.github.io"
+"GitHub" = "https://github.com/spiglerg/esmpi"
+#"Bug Tracker" = "https://github.com/pypa/sampleproject/issues"
+
+
+[tool.black]
+line-length = 120
+#target_version = ['py38']
+include = '\.pyi?$'
+exclude = '''
+(
+  /(
+      \.eggs
+    | \.git
+    | \.hg
+    | \.mypy_cache
+    | \.tox
+    | \.venv
+    | _build
+    | buck-out
+    | build
+    | dist
+  )/
+)
+'''
+
