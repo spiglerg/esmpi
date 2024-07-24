@@ -14,5 +14,5 @@ optimizer = ES_MPI(n_params=10, population_size=16, learning_rate=0.1, sigma=0.0
 for i in range(50):
     fit = optimizer.step(eval_fn)
 
-    if optimizer.is_master == 0:
+    if optimizer.is_master:
         print(f"{i}: fitness {np.mean(fit)}, current best params {optimizer.get_parameters()}\n")

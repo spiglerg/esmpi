@@ -6,7 +6,7 @@ Part of the code (SGD/Adam optimizers and SharedNoiseTable) are adapted from Ope
   https://github.com/openai/evolution-strategies-starter
 """
 
-from .esmpi import ES_MPI, util_torch_set_parameters, util_torch_get_parameters, \
+from .es_mpi import ES_MPI, util_torch_set_parameters, util_torch_get_parameters, \
                    compute_centered_ranks, compute_identity_ranks
 
 try:
@@ -17,7 +17,7 @@ except ImportError:
     print('\033[91mProblem importing stable-baselines3. MPIVecNormalize will not be available.\033[0m')
 
 try:
-    from .cma_esmpi import CMA_ESMPI
+    from .cmaes_mpi import CMAES_MPI
     cmaes_imported = True
 except ImportError:
     cmaes_imported = False
@@ -34,4 +34,4 @@ __all__ = ['ES_MPI',
 if mpivecnormalize_imported:
     __all__ += ['MPIVecNormalize']
 if cmaes_imported:
-    __all__ += ['CMA_ESMPI']
+    __all__ += ['CMAES_MPI']

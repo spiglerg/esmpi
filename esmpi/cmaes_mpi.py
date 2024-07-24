@@ -8,7 +8,7 @@ from cmaes import CMA
 
 
 
-class CMA_ESMPI():
+class CMAES_MPI():
     """
     The CMA_MPI class implements Evolution Strategies using MPI (Message Passing Interface) for parallel computing.
 

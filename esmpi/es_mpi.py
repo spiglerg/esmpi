@@ -184,7 +184,6 @@ class ES_MPI():
 
             noise_ids, fitness_values = zip(*worker_results)
 
-
             # Fitness shaping
             all_fitnesses = np.asarray(fitness_values) # incl. antithetic pairs
             all_fitnesses_flattened = np.reshape(all_fitnesses, -1)

@@ -49,8 +49,10 @@ for i in range(30):
     fit = optimizer.step(eval_fn)
     en = time.time()
 
-    if optimizer.is_master == 0:
+    if optimizer.is_master:
         print(f"{i}: mean reward {-np.mean(fit)}, iteration time {en-st}\n")
 
-util_torch_set_parameters(optimizer.get_parameters(), model.policy)
-model.save("cartpolev1")
+if optimizer.is_master:
+    util_torch_set_parameters(optimizer.get_parameters(), model.policy)
+    model.save("cartpolev1")
+    
