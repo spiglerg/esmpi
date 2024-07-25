@@ -38,7 +38,6 @@ optimizer = ES_MPI(n_params=len(initial_parameters),
                    sigma=0.02)
 
 
-
 def eval_fn(params):
     util_torch_set_parameters(params, model.policy)
     mean_reward, _ = evaluate_policy(model, env, n_eval_episodes=10)
@@ -55,4 +54,3 @@ for i in range(30):
 if optimizer.is_master:
     util_torch_set_parameters(optimizer.get_parameters(), model.policy)
     model.save("cartpolev1")
-    

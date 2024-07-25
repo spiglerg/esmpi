@@ -75,8 +75,8 @@ class SharedNoiseTable(object):
     def get(self, i, dim):
         return self.noise[i:i + dim]
 
-    def sample_index(self, stream, dim):
-        return stream.randint(0, len(self.noise) - dim + 1)
+    def sample_index(self, stream, dim, size=None):
+        return stream.randint(0, len(self.noise) - dim + 1, size=size)
 ## END OpenAI - Evolution Strategies
 
 
@@ -95,6 +95,20 @@ class ES_MPI():
                  fitness_transform_fn=compute_centered_ranks):
         """
         Initialize the ESMPI class.
+
+        If antithetic sampling is used, the population of workers is split equally in half, with one half evaluating
+        the positive perturbations and the other half evaluating the negative perturbations.
+        Perturbations in each pair are evaluated in one of two ways, depending on whether the population size is equal
+        to the number of available workers, or if the population size is larger than the number of available workers.
+
+        population_size == num_workers: If the population size is equal to the number of available workers, then 
+                                        even workers compute the positive perturbation, and odd workers compute the
+                                        negative perturbation. Perturbations are pre-computed by the master and sent
+                                        to the workers.
+                                        *Note that in this case, the number of actual perturbations computed is 
+                                        population_size/2*.
+        population_size > num_workers: If the population size is larger than the number of available workers, then
+                                        antithetic pairs are evaluated by the same worker.
 
         Args:
             n_params: Number of parameters to optimize.
@@ -119,7 +133,6 @@ class ES_MPI():
         self.sigma = sigma
         self.population_size = population_size
         self.use_antithetic_sampling = use_antithetic_sampling
-
         self.fitness_transform_fn = fitness_transform_fn
 
         self._comm = MPI.COMM_WORLD
@@ -137,9 +150,15 @@ class ES_MPI():
         if self.population_size % self.num_workers != 0:
             print(f"\033[91m ERROR: population size {self.population_size} \
                   is not a multiple of the number of workers {self.num_workers}\033[0m")
+            exit(1)
         if self.is_master:
             print(f"\033[93m Running {self.population_per_worker} perturbations on each worker, \
                   over {self.num_workers} workers. \033[0m")
+
+        if self.population_size == self.num_workers and self.use_antithetic_sampling:
+            self.antithetic_on_different_nodes = True
+        else:
+            self.antithetic_on_different_nodes = False
 
         # Initialize weights and sync them across workers
         if initial_parameters is None:
@@ -157,20 +176,47 @@ class ES_MPI():
             If master, returns all fitness values from all workers; else, an empty list is returned.
         """
 
+        # If population size is equal to the number of workers, then the master pre-computes the perturbations,
+        # since each worker will only evaluate a single perturbation, but we need to guarantee the generation
+        # of antithetic pairs.
+        master_indices = None
+        indices_to_send = None
+        if self.antithetic_on_different_nodes:
+            if self.is_master:
+                master_indices = self.noise.sample_index(self.rs, len(self.current_parameters), size=self.population_size//2)
+                indices_to_send = np.repeat(master_indices, 2)
+        else:
+            # Each worker receives population_per_worker//2 perturbations is antithetic is used, or the whole if not.
+            if self.is_master:
+                master_indices = self.noise.sample_index(self.rs, len(self.current_parameters), size=self.population_size)
+                indices_to_send = np.split(master_indices, self.num_workers)
+        noise_indices = self._comm.scatter(indices_to_send, root=0)
+
         # Each worker samples its 'self.population_per_worker' random perturbations + evaluate their fitness
         worker_results = []
         for i in range(self.population_per_worker):
             #perturbation_i = np.random.randn(*self.current_parameters.shape).astype(np.float32)
-            noise_idx = self.noise.sample_index(self.rs, len(self.current_parameters))
+            if type(noise_indices) == np.int64:
+                noise_idx = noise_indices
+            else:
+                noise_idx = noise_indices[i]
             perturbation_i = self.noise.get(noise_idx, len(self.current_parameters))
 
             fitness_values = []
-            for j in range(2 if self.use_antithetic_sampling else 1):
-                sign = 1 if j == 0 else -1
-                perturbed_parameters = self.current_parameters + sign * self.sigma * perturbation_i
+            if not self.antithetic_on_different_nodes:
+                # that is, either each worker evaluates both antithetic samples, or no antithetic sampling is used
+                for j in range(2 if self.use_antithetic_sampling else 1):
+                    sign = 1 if j == 0 else -1
+                    perturbed_parameters = self.current_parameters + sign * self.sigma * perturbation_i
+                    fitness_values.append( eval_fn(perturbed_parameters, **eval_fn_kwargs) )
+
+            else:
+                if self._rank % 2 == 1:
+                    perturbation_i = -perturbation_i
+                perturbed_parameters = self.current_parameters + self.sigma * perturbation_i
                 fitness_values.append( eval_fn(perturbed_parameters, **eval_fn_kwargs) )
 
-            worker_results.append([noise_idx, fitness_values])
+            worker_results.append(fitness_values)
 
         # Workers send the perturbed weights (indices in the shared noise table) + the corresponding fitnesses
         # to the master
@@ -180,30 +226,48 @@ class ES_MPI():
         # send their data to all other workers
         if self.is_master:
             # Master
-            worker_results = sum(worker_results, [])
-
-            noise_ids, fitness_values = zip(*worker_results)
+            fitness_values = sum(worker_results, [])
 
             # Fitness shaping
+            ret_all_fitnesses = np.asarray(fitness_values)
             all_fitnesses = np.asarray(fitness_values) # incl. antithetic pairs
-            all_fitnesses_flattened = np.reshape(all_fitnesses, -1)
-            fitnesses_ = compute_centered_ranks(np.asarray(all_fitnesses_flattened))
-            fitnesses_ = np.reshape(fitnesses_, all_fitnesses.shape)
 
-            fitnesses = []
-            for i in range(len(fitnesses_)):
-            # (if antithetic, only save a single (perturbation, (perf(+epsilon)-perf(-epsilon))/2 ) )
-                if self.use_antithetic_sampling:
-                    fitnesses.append( fitnesses_[i,0] - fitnesses_[i,1] )
-                else:
-                    fitnesses.append( fitnesses_[i,0] )
+            #"""
+            # DESIGN CHOICE: fitness shaping is applied to the antithetic pairs, not to the individual perturbations
+            if self.antithetic_on_different_nodes:
+                # master_indices contains the non-duplicated indices of the perturbations, so it has half the size of all_fitnesses, which
+                # contains the fitnesses of the antithetic pairs
+                all_fitnesses = np.squeeze(all_fitnesses)
+                all_fitnesses = all_fitnesses[::2] - all_fitnesses[1::2]
+
+            elif self.use_antithetic_sampling:
+                all_fitnesses = all_fitnesses[:,0] - all_fitnesses[:, 1]
+            fitnesses = compute_centered_ranks(all_fitnesses)
+            #"""
+
+            """
+            # DESIGN CHOICE: fitness shaping is applied to the original scores (separately for each antithetic pair)
+            # and only after their difference is computed
+            all_fitnesses_flattened = all_fitnesses.flatten()
+            fitnesses = compute_centered_ranks(all_fitnesses)
+            all_fitnesses = fitnesses.reshape(all_fitnesses.shape)
+
+            if self.antithetic_on_different_nodes:
+                # master_indices contains the non-duplicated indices of the perturbations, so it has half the size of all_fitnesses, which
+                # contains the fitnesses of the antithetic pairs
+                all_fitnesses = np.squeeze(all_fitnesses)
+                fitnesses = all_fitnesses[::2] - all_fitnesses[1::2]
+
+            elif self.use_antithetic_sampling:
+                fitnesses = all_fitnesses[:,0] - all_fitnesses[:, 1]
+            #"""
 
             gradient = np.zeros(self.current_parameters.shape, dtype=np.float32)
-            for j in range(len(noise_ids)):
-                perturbation_j = self.noise.get(noise_ids[j], len(self.current_parameters))
+            for j in range(len(master_indices)):
+                perturbation_j = self.noise.get(master_indices[j], len(self.current_parameters))
                 gradient += perturbation_j * fitnesses[j]
 
-            gradient = gradient / len(noise_ids) / self.sigma
+            gradient = gradient / len(master_indices) / self.sigma
             if self.use_antithetic_sampling:
                 # In antithetic sampling, the gradient is 1/(2*sigma) instead of 1/sigma.
                 gradient /= 2.0
@@ -216,8 +280,8 @@ class ES_MPI():
         self.current_parameters = self._comm.bcast(self.current_parameters, root=0)
 
         if not self.is_master:
-            all_fitnesses_flattened = []
-        return all_fitnesses_flattened
+            ret_all_fitnesses = []
+        return ret_all_fitnesses
 
     def get_parameters(self):
         """
