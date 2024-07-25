@@ -23,7 +23,7 @@ except ImportError:
     cmaes_imported = False
     print('\033[91mProblem importing cmaes. CMA_MPI will not be available.\033[0m')
 
-__version__ = 1.0
+__version__ = "1.0"
 
 __all__ = ['ES_MPI',
            'util_torch_set_parameters',

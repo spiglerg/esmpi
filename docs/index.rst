@@ -6,7 +6,6 @@ Welcome to ES-MPI documentation!
    :caption: Contents:
 
 
-
 Indices and tables
 ==================
 

@@ -42,7 +42,9 @@ class CMAES_MPI():
 
         Args:
             n_params (int): The number of parameters in the model.
-            population_size (int, optional): The size of the population. Default is None.
+            population_size (int, optional): The size of the population. Default is None (= automatic calculation).
+                                            population_size = -1 automatically sets the population size to the number
+                                            of available workers.
             initial_parameters (np.ndarray, optional): The initial mean of the distribution. Default is None,
                                                  corresponding to an initialization in the middle of the bounds,
                                                  if given, or else 0.
@@ -60,6 +62,14 @@ class CMAES_MPI():
         self.n_params = n_params
         self.population_size = population_size
 
+        self._comm = MPI.COMM_WORLD
+        self._rank = self._comm.Get_rank()
+        self.num_workers = self._comm.Get_size()
+        self.is_master = self._rank==0
+
+        if self.population_size == -1:
+            self.population_size = self.num_workers
+
         if initial_parameters is None:
             if bounds is not None:
                 self.initial_mean = np.mean(bounds, axis=1)
@@ -76,11 +86,6 @@ class CMAES_MPI():
                              population_size=population_size,
                              cov=cov,
                              lr_adapt=lr_adapt)
-
-        self._comm = MPI.COMM_WORLD
-        self._rank = self._comm.Get_rank()
-        self.num_workers = self._comm.Get_size()
-        self.is_master = self._rank==0
 
         self.population_per_worker = self.population_size // self.num_workers
 
@@ -128,7 +133,7 @@ class CMAES_MPI():
         """
         Get current mean parameters of the optimizer.
         """
-        return self.optimizer._mean
+        return self.optimizer.mean
 
     def should_stop(self):
         """

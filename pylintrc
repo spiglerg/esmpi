@@ -129,6 +129,8 @@ disable=R,
         wrong-import-order,
         xrange-builtin,
         zip-builtin-not-iterating,
+        C0103,
+        W0105,
 
 
 [REPORTS]
@@ -194,7 +196,7 @@ class-attribute-rgx=^(_?[A-Z][A-Z0-9_]*|__[a-z0-9_]+__|_?[a-z][a-z0-9_]*)$
 inlinevar-rgx=^[a-z][a-z0-9_]*$
 
 # Regular expression matching correct class names
-class-rgx=^_?[A-Z][a-zA-Z0-9]*$
+# class-rgx=^_?[A-Z][a-zA-Z0-9]*$
 
 # Regular expression matching correct module names
 module-rgx=^(_?[a-z][a-z0-9_]*|__init__)$

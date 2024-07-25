@@ -101,11 +101,11 @@ class ES_MPI():
         Perturbations in each pair are evaluated in one of two ways, depending on whether the population size is equal
         to the number of available workers, or if the population size is larger than the number of available workers.
 
-        population_size == num_workers: If the population size is equal to the number of available workers, then 
+        population_size == num_workers: If the population size is equal to the number of available workers, then
                                         even workers compute the positive perturbation, and odd workers compute the
                                         negative perturbation. Perturbations are pre-computed by the master and sent
                                         to the workers.
-                                        *Note that in this case, the number of actual perturbations computed is 
+                                        *Note that in this case, the number of actual perturbations computed is
                                         population_size/2*.
         population_size > num_workers: If the population size is larger than the number of available workers, then
                                         antithetic pairs are evaluated by the same worker.
@@ -114,6 +114,8 @@ class ES_MPI():
             n_params: Number of parameters to optimize.
             population_size: The size of the population in each generation (default is 160). This should be a multiple
                             of the number of parallel MPI processes used.'
+                            population_size = -1 automatically sets the population size to the number of available
+                            workers.
             initial_parameters (np.ndarray, optional): The initial mean of the distribution. Default is None,
                                                  corresponding to an initialization to 0. When optimizing neural
                                                  networks, it is recommended to use the initial random weights of the
@@ -139,6 +141,9 @@ class ES_MPI():
         self._rank = self._comm.Get_rank()
         self.num_workers = self._comm.Get_size()
         self.is_master = self._rank==0
+
+        if self.population_size == -1:
+            self.population_size = self.num_workers
 
         self.noise = SharedNoiseTable()
         self.rs = np.random.RandomState()
@@ -183,12 +188,16 @@ class ES_MPI():
         indices_to_send = None
         if self.antithetic_on_different_nodes:
             if self.is_master:
-                master_indices = self.noise.sample_index(self.rs, len(self.current_parameters), size=self.population_size//2)
+                master_indices = self.noise.sample_index(self.rs,
+                                                         len(self.current_parameters),
+                                                         size=self.population_size//2)
                 indices_to_send = np.repeat(master_indices, 2)
         else:
             # Each worker receives population_per_worker//2 perturbations is antithetic is used, or the whole if not.
             if self.is_master:
-                master_indices = self.noise.sample_index(self.rs, len(self.current_parameters), size=self.population_size)
+                master_indices = self.noise.sample_index(self.rs,
+                                                         len(self.current_parameters),
+                                                         size=self.population_size)
                 indices_to_send = np.split(master_indices, self.num_workers)
         noise_indices = self._comm.scatter(indices_to_send, root=0)
 
@@ -196,7 +205,7 @@ class ES_MPI():
         worker_results = []
         for i in range(self.population_per_worker):
             #perturbation_i = np.random.randn(*self.current_parameters.shape).astype(np.float32)
-            if type(noise_indices) == np.int64:
+            if isinstance(noise_indices, np.int64):
                 noise_idx = noise_indices
             else:
                 noise_idx = noise_indices[i]
@@ -235,8 +244,8 @@ class ES_MPI():
             #"""
             # DESIGN CHOICE: fitness shaping is applied to the antithetic pairs, not to the individual perturbations
             if self.antithetic_on_different_nodes:
-                # master_indices contains the non-duplicated indices of the perturbations, so it has half the size of all_fitnesses, which
-                # contains the fitnesses of the antithetic pairs
+                # master_indices contains the non-duplicated indices of the perturbations, so it has half the size
+                # of all_fitnesses, which contains the fitnesses of the antithetic pairs
                 all_fitnesses = np.squeeze(all_fitnesses)
                 all_fitnesses = all_fitnesses[::2] - all_fitnesses[1::2]
 
@@ -253,8 +262,8 @@ class ES_MPI():
             all_fitnesses = fitnesses.reshape(all_fitnesses.shape)
 
             if self.antithetic_on_different_nodes:
-                # master_indices contains the non-duplicated indices of the perturbations, so it has half the size of all_fitnesses, which
-                # contains the fitnesses of the antithetic pairs
+                # master_indices contains the non-duplicated indices of the perturbations, so it has half the size
+                # of all_fitnesses, which contains the fitnesses of the antithetic pairs
                 all_fitnesses = np.squeeze(all_fitnesses)
                 fitnesses = all_fitnesses[::2] - all_fitnesses[1::2]
 
