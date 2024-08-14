@@ -35,10 +35,9 @@ try:
                     tmp_mult = self.count / (self.count + batch_count)
                     tmp_mult2 = batch_count / (self.count + batch_count)
                     var_delta = np.square(delta) * tmp_mult * tmp_mult2
-
                     new_var = (m_a + m_b) / (self.count + batch_count) + \
                                 var_delta
-
+    
                     new_count = batch_count + self.count
 
                     self.mean = new_mean
